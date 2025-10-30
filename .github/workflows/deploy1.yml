@@ -5,8 +5,10 @@ on:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      image-uri: ${{ steps.build-image.outputs.image }}
     
     steps:
     - name: Checkout code
@@ -33,7 +35,8 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
     
-    - name: Build, tag, and push image to Amazon ECR
+    - name: Build and push Docker image
+      id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: my-app
@@ -41,11 +44,25 @@ jobs:
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
     
-    - name: Deploy to Amazon ECS
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: my-app
-        IMAGE_TAG: ${{ github.sha }}
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    
+    - name: Update ECS service
       run: |
-        aws ecs update-service --cluster my-cluster --service my-service --force-new-deployment
+        aws ecs update-service \
+          --cluster my-cluster \
+          --service my-service \
+          --force-new-deployment \
+          --task-definition $(aws ecs describe-services --cluster my-cluster --services my-service --query 'services[0].taskDefinition' --output text | sed 's|.*:||') \
+          --desired-count 1
