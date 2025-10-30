@@ -1,15 +1,12 @@
-
-## 🐳 **Dockerfile Content:**
-
-```docke-srelim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY retxt.
-RUN pip insall -r requiements.txt
-X
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
 COPY . .
 
-EXDPOSE 5000
+EXPOSE 5000
 
-CMD["python", "y"]
+CMD ["python", "app.py"]
