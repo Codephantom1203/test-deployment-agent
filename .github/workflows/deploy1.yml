@@ -4,6 +4,9 @@ on:
   push:
     branches: [ main ]
 
+env:
+  BUCKET_NAME: my-static-site-${{ github.run_number }}-${{ github.sha }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,32 +15,27 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Create static HTML version
+    - name: Create dist directory
+      run: mkdir -p dist
+    
+    - name: Generate static HTML
       run: |
-        mkdir -p dist
         echo '<!DOCTYPE html>' > dist/index.html
         echo '<html lang="en">' >> dist/index.html
         echo '<head>' >> dist/index.html
         echo '    <meta charset="UTF-8">' >> dist/index.html
         echo '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' >> dist/index.html
-        echo '    <title>Flask App - Static Version</title>' >> dist/index.html
-        echo '    <style>' >> dist/index.html
-        echo '        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }' >> dist/index.html
-        echo '        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }' >> dist/index.html
-        echo '        h1 { color: #333; text-align: center; }' >> dist/index.html
-        echo '        p { color: #666; line-height: 1.6; }' >> dist/index.html
-        echo '    </style>' >> dist/index.html
+        echo '    <title>My Static Site</title>' >> dist/index.html
         echo '</head>' >> dist/index.html
         echo '<body>' >> dist/index.html
-        echo '    <div class="container">' >> dist/index.html
-        echo '        <h1>Welcome to Flask App</h1>' >> dist/index.html
-        echo '        <p>This is a static version of the Flask application, deployed to AWS S3.</p>' >> dist/index.html
-        echo '        <p>Successfully converted from Flask to static HTML and deployed via GitHub Actions.</p>' >> dist/index.html
-        echo '    </div>' >> dist/index.html
+        echo '    <h1>Welcome to My Static Website</h1>' >> dist/index.html
+        echo '    <p>This site was deployed using GitHub Actions to AWS S3.</p>' >> dist/index.html
+        echo '    <p>Build Number: ${{ github.run_number }}</p>' >> dist/index.html
+        echo '    <p>Commit SHA: ${{ github.sha }}</p>' >> dist/index.html
         echo '</body>' >> dist/index.html
         echo '</html>' >> dist/index.html
     
-    - name: Upload build artifacts
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: static-site
@@ -51,7 +49,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Download build artifacts
+    - name: Download artifact
       uses: actions/download-artifact@v4
       with:
         name: static-site
@@ -64,24 +62,35 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
     
-    - name: Create S3 bucket if not exists
+    - name: Create S3 bucket
       run: |
-        BUCKET_NAME="codephantom-deploy-test-${{ github.run_number }}"
-        echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
-        aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null || aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
+        aws s3 mb s3://$BUCKET_NAME --region us-east-1 || echo "Bucket may already exist"
     
     - name: Enable static website hosting
       run: |
         aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
     
-    - name: Set bucket policy for public read access
+    - name: Create bucket policy
       run: |
-        cat > bucket-policy.json << 'EOF'
-        {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Sid": "PublicReadGetObject",
-              "Effect": "Allow",
-              "Principal": "*",
-              "Action": "s3:Get
+        echo '{' > bucket-policy.json
+        echo '  "Version": "2012-10-17",' >> bucket-policy.json
+        echo '  "Statement": [' >> bucket-policy.json
+        echo '    {' >> bucket-policy.json
+        echo '      "Sid": "PublicReadGetObject",' >> bucket-policy.json
+        echo '      "Effect": "Allow",' >> bucket-policy.json
+        echo '      "Principal": "*",' >> bucket-policy.json
+        echo '      "Action": "s3:GetObject",' >> bucket-policy.json
+        echo '      "Resource": "arn:aws:s3:::'"$BUCKET_NAME"'/*"' >> bucket-policy.json
+        echo '    }' >> bucket-policy.json
+        echo '  ]' >> bucket-policy.json
+        echo '}' >> bucket-policy.json
+    
+    - name: Apply bucket policy
+      run: |
+        aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://bucket-policy.json
+    
+    - name: Upload files to S3
+      run: |
+        aws s3 cp dist/index.html s3://$BUCKET_NAME/index.html --content-type "text/html"
+    
+    - name: Output
