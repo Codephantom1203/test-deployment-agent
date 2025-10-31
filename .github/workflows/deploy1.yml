@@ -1,4 +1,4 @@
-name: Deploy to AWS S3 Static Website
+name: Deploy to S3 Static Website
 
 on:
   push:
@@ -61,11 +61,15 @@ jobs:
         
     - name: Create S3 bucket if not exists
       run: |
-        aws s3 mb s3://$BUCKET_NAME --region us-east-1 || echo "Bucket may already exist"
+        aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1 || echo "Bucket may already exist"
         
     - name: Enable static website hosting
       run: |
         aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
+        
+    - name: Disable Block Public Access
+      run: |
+        aws s3api put-public-access-block --bucket $BUCKET_NAME --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
         
     - name: Create bucket policy JSON file
       run: |
@@ -88,8 +92,4 @@ jobs:
         
     - name: Upload files to S3
       run: |
-        aws s3 cp dist/index.html s3://$BUCKET_NAME/index.html --content-type "text/html"
-        
-    - name: Output website URL
-      run: |
-        echo "Website URL: http://$BUCKET_NAME.s3-website-us-east-1.amazonaws.com"
+        aws s3 cp
