@@ -11,10 +11,10 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+      
     - name: Create dist directory
       run: mkdir -p dist
-    
+      
     - name: Create static HTML version
       run: |
         echo '<!DOCTYPE html>' > dist/index.html
@@ -29,7 +29,7 @@ jobs:
         echo '    <p>This is a static version of the Flask application.</p>' >> dist/index.html
         echo '</body>' >> dist/index.html
         echo '</html>' >> dist/index.html
-    
+        
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
@@ -45,28 +45,28 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Download artifact from build job
+      
+    - name: Download artifact
       uses: actions/download-artifact@v4
       with:
         name: static-site
         path: dist/
-    
+        
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
-    
+        
     - name: Create S3 bucket if not exists
       run: |
         aws s3 mb s3://$BUCKET_NAME --region us-east-1 || echo "Bucket may already exist"
-    
-    - name: Disable Block Public Access
+        
+    - name: Enable static website hosting
       run: |
-        aws s3api put-public-access-block --bucket $BUCKET_NAME --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
-    
+        aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
+        
     - name: Create bucket policy JSON file
       run: |
         echo '{' > bucket-policy.json
@@ -81,14 +81,15 @@ jobs:
         echo '    }' >> bucket-policy.json
         echo '  ]' >> bucket-policy.json
         echo '}' >> bucket-policy.json
-    
-    - name: Apply bucket policy to bucket
+        
+    - name: Apply bucket policy
       run: |
         aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://bucket-policy.json
-    
-    - name: Enable static website hosting
-      run: |
-        aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
-    
+        
     - name: Upload files to S3
       run: |
+        aws s3 cp dist/index.html s3://$BUCKET_NAME/index.html --content-type "text/html"
+        
+    - name: Output website URL
+      run: |
+        echo "Website URL: http://$BUCKET_NAME.s3-website-us-east-1.amazonaws.com"
