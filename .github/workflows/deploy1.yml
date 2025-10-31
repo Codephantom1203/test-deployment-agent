@@ -1,11 +1,11 @@
-name: Build and Deploy to S3
+name: Deploy to AWS S3 Static Website
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     
     steps:
@@ -14,31 +14,48 @@ jobs:
     
     - name: Create static HTML version
       run: |
-        echo '<!DOCTYPE html>' > index.html
-        echo '<html>' >> index.html
-        echo '<head>' >> index.html
-        echo '    <title>Flask App - Deployed to S3</title>' >> index.html
-        echo '    <style>' >> index.html
-        echo '        body { font-family: Arial; text-align: center; padding: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; min-height: 100vh; margin: 0; }' >> index.html
-        echo '        .container { background: rgba(255,255,255,0.1); padding: 40px; border-radius: 10px; max-width: 600px; margin: 0 auto; }' >> index.html
-        echo '        h1 { color: #fff; margin-bottom: 30px; }' >> index.html
-        echo '        .endpoint { margin: 20px 0; padding: 20px; background: rgba(255,255,255,0.2); border-radius: 5px; }' >> index.html
-        echo '        .status { color: #4ade80; font-weight: bold; }' >> index.html
-        echo '    </style>' >> index.html
-        echo '</head>' >> index.html
-        echo '<body>' >> index.html
-        echo '    <div class="container">' >> index.html
-        echo '        <h1>🚀 Hello from my Deployment Agent!</h1>' >> index.html
-        echo '        <div class="endpoint">' >> index.html
-        echo '            <h2>Health Check</h2>' >> index.html
-        echo '            <p><span class="status">Status:</span> healthy</p>' >> index.html
-        echo '            <p><span class="status">Message:</span> Deployment agent test app</p>' >> index.html
-        echo '        </div>' >> index.html
-        echo '        <p><em>Successfully deployed to AWS S3!</em></p>' >> index.html
-        echo '    </div>' >> index.html
-        echo '</body>' >> index.html
-        echo '</html>' >> index.html
-        echo "✅ HTML file created"
+        mkdir -p dist
+        echo '<!DOCTYPE html>' > dist/index.html
+        echo '<html lang="en">' >> dist/index.html
+        echo '<head>' >> dist/index.html
+        echo '    <meta charset="UTF-8">' >> dist/index.html
+        echo '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' >> dist/index.html
+        echo '    <title>Flask App - Static Version</title>' >> dist/index.html
+        echo '    <style>' >> dist/index.html
+        echo '        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }' >> dist/index.html
+        echo '        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }' >> dist/index.html
+        echo '        h1 { color: #333; text-align: center; }' >> dist/index.html
+        echo '        p { color: #666; line-height: 1.6; }' >> dist/index.html
+        echo '    </style>' >> dist/index.html
+        echo '</head>' >> dist/index.html
+        echo '<body>' >> dist/index.html
+        echo '    <div class="container">' >> dist/index.html
+        echo '        <h1>Welcome to Flask App</h1>' >> dist/index.html
+        echo '        <p>This is a static version of the Flask application, deployed to AWS S3.</p>' >> dist/index.html
+        echo '        <p>Successfully converted from Flask to static HTML and deployed via GitHub Actions.</p>' >> dist/index.html
+        echo '    </div>' >> dist/index.html
+        echo '</body>' >> dist/index.html
+        echo '</html>' >> dist/index.html
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: static-site
+        path: dist/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: static-site
+        path: dist/
     
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -49,24 +66,22 @@ jobs:
     
     - name: Create S3 bucket if not exists
       run: |
-        if ! aws s3api head-bucket --bucket codephantom-deploy-test 2>/dev/null; then
-          echo "Creating bucket..."
-          aws s3api create-bucket --bucket codephantom-deploy-test --region us-east-1 || aws s3 mb s3://codephantom-deploy-test
-        else
-          echo "Bucket already exists"
-        fi
+        BUCKET_NAME="codephantom-deploy-test-${{ github.run_number }}"
+        echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
+        aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null || aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
     
     - name: Enable static website hosting
       run: |
-        aws s3 website s3://codephantom-deploy-test --index-document index.html --error-document index.html
+        aws s3 website s3://$BUCKET_NAME --index-document index.html --error-document index.html
     
-    - name: Set bucket policy for public read
+    - name: Set bucket policy for public read access
       run: |
-        echo '{"Version":"2012-10-17","Statement":[{"Sid":"PublicReadGetObject","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::codephantom-deploy-test/*"}]}' > bucket-policy.json
-        aws s3api put-bucket-policy --bucket codephantom-deploy-test --policy file://bucket-policy.json
-    
-    - name: Upload files to S3
-      run: |
-        aws s3 cp index.html s3://codephantom-deploy-test/index.html --content-type "text/html"
-        echo "✅ Deployment complete!"
-        echo "🌐 Website URL: http://codephantom-deploy-test.s3-website-us-east-1.amazonaws.com"
+        cat > bucket-policy.json << 'EOF'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "PublicReadGetObject",
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": "s3:Get
