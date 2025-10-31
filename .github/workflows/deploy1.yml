@@ -49,24 +49,24 @@ jobs:
     
     - name: Create S3 bucket if not exists
       run: |
-        if ! aws s3api head-bucket --bucket my-app-static-website 2>/dev/null; then
+        if ! aws s3api head-bucket --bucket test-deployment-agent-027540914014 2>/dev/null; then
           echo "Creating bucket..."
-          aws s3api create-bucket --bucket my-app-static-website --region us-east-1 || aws s3 mb s3://my-app-static-website
+          aws s3api create-bucket --bucket test-deployment-agent-027540914014 --region us-east-1 || aws s3 mb s3://test-deployment-agent-027540914014
         else
           echo "Bucket already exists"
         fi
     
     - name: Enable static website hosting
       run: |
-        aws s3 website s3://my-app-static-website --index-document index.html --error-document index.html
+        aws s3 website s3://test-deployment-agent-027540914014 --index-document index.html --error-document index.html
     
     - name: Set bucket policy for public read
       run: |
-        echo '{"Version":"2012-10-17","Statement":[{"Sid":"PublicReadGetObject","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::my-app-static-website/*"}]}' > bucket-policy.json
-        aws s3api put-bucket-policy --bucket my-app-static-website --policy file://bucket-policy.json
+        echo '{"Version":"2012-10-17","Statement":[{"Sid":"PublicReadGetObject","Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::test-deployment-agent-027540914014/*"}]}' > bucket-policy.json
+        aws s3api put-bucket-policy --bucket test-deployment-agent-027540914014 --policy file://bucket-policy.json
     
     - name: Upload files to S3
       run: |
-        aws s3 cp index.html s3://my-app-static-website/index.html --content-type "text/html" --acl public-read
+        aws s3 cp index.html s3://test-deployment-agent-027540914014/index.html --content-type "text/html" --acl public-read
         echo "✅ Deployment complete!"
-        echo "🌐 Website URL: http://my-app-static-website.s3-website-us-east-1.amazonaws.com"
+        echo "🌐 Website URL: http://test-deployment-agent-027540914014.s3-website-us-east-1.amazonaws.com"
