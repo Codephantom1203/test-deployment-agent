@@ -67,6 +67,6 @@ jobs:
     
     - name: Upload files to S3
       run: |
-        aws s3 cp index.html s3://codephantom-deploy-test/index.html --content-type "text/html" --acl public-read
+        aws s3 cp index.html s3://codephantom-deploy-test/index.html --content-type "text/html"
         echo "✅ Deployment complete!"
         echo "🌐 Website URL: http://codephantom-deploy-test.s3-website-us-east-1.amazonaws.com"
