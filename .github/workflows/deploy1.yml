@@ -1,4 +1,4 @@
-name: Build and Deploy to ECS
+name: Build and Deploy to S3
 
 on:
   push:
@@ -7,50 +7,73 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      image-uri: ${{ steps.build-image.outputs.image }}
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-    
-    - name: Install dependencies
+    - name: Create static HTML version
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        cat > index.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flask App - Deployed to S3</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            padding: 40px;
+            border-radius: 10px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 { color: #fff; margin-bottom: 30px; }
+        .endpoint { 
+            margin: 20px 0; 
+            padding: 20px; 
+            background: rgba(255,255,255,0.2); 
+            border-radius: 5px; 
+        }
+        .status { color: #4ade80; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Hello from my Deployment Agent!</h1>
+        <div class="endpoint">
+            <h2>Health Check</h2>
+            <p><span class="status">Status:</span> healthy</p>
+            <p><span class="status">Message:</span> Deployment agent test app</p>
+        </div>
+        <p><em>Successfully deployed to AWS S3!</em></p>
+    </div>
+</body>
+</html>
+EOF
     
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-    
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-    
-    - name: Build and push Docker image
-      id: build-image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: my-app
-        IMAGE_TAG: ${{ github.sha }}
+    - name: Prepare files for S3
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        mkdir -p dist
+        cp index.html dist/
+        echo "✅ Files ready for S3 deployment"
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -58,11 +81,92 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
     
-    - name: Update ECS service
+    - name: Create S3 bucket if not exists
       run: |
-        aws ecs update-service \
-          --cluster my-cluster \
-          --service my-service \
-          --force-new-deployment \
-          --task-definition $(aws ecs describe-services --cluster my-cluster --services my-service --query 'services[0].taskDefinition' --output text | sed 's|.*:||') \
-          --desired-count 1
+        if aws s3api head-bucket --bucket my-app-static-website 2>/dev/null; then
+          echo "Bucket exists"
+        else
+          aws s3api create-bucket \
+            --bucket my-app-static-website \
+            --region us-east-1 || \
+          aws s3api create-bucket \
+            --bucket my-app-static-website \
+            --region us-east-1 \
+            --create-bucket-configuration LocationConstraint=us-east-1
+        fi
+    
+    - name: Enable static website hosting
+      run: |
+        aws s3 website s3://my-app-static-website \
+          --index-document index.html \
+          --error-document index.html
+    
+    - name: Set bucket policy for public read
+      run: |
+        cat > bucket-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-app-static-website/*"
+    }
+  ]
+}
+EOF
+        aws s3api put-bucket-policy --bucket my-app-static-website --policy file://bucket-policy.json
+    
+    - name: Upload files to S3
+      run: |
+        cat > index.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flask App - Deployed to S3</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            padding: 40px;
+            border-radius: 10px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 { color: #fff; margin-bottom: 30px; }
+        .endpoint { 
+            margin: 20px 0; 
+            padding: 20px; 
+            background: rgba(255,255,255,0.2); 
+            border-radius: 5px; 
+        }
+        .status { color: #4ade80; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Hello from my Deployment Agent!</h1>
+        <div class="endpoint">
+            <h2>Health Check</h2>
+            <p><span class="status">Status:</span> healthy</p>
+            <p><span class="status">Message:</span> Deployment agent test app</p>
+        </div>
+        <p><em>Successfully deployed to AWS S3!</em></p>
+    </div>
+</body>
+</html>
+EOF
+        aws s3 cp index.html s3://my-app-static-website/index.html \
+          --content-type "text/html" \
+          --acl public-read
+        echo "✅ Deployment complete!"
